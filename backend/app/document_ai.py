@@ -108,7 +108,19 @@ async def group_documents_with_agent(
         "\"matched_keywords\":[\"근거 단어\"]}].\n"
         f"문서 목록:\n{json.dumps(documents, ensure_ascii=False)}"
     )
-    results = _parse_response(await _run_ai(prompt, settings))
+    if settings.orchestrator_provider != "microsoft-agent":
+        raise IntegrationError("문서 주제 분석에는 Microsoft Agent Framework가 필요합니다.")
+    topic_prompt = (
+        "각 문서의 연구 주제, 연구 대상, 핵심 문제, 방법론을 요약하세요. "
+        "문서 id를 유지한 JSON 배열만 반환하세요: "
+        "[{\"id\":\"문서 id\",\"topic\":\"주제\",\"summary\":\"요약\"}].\n"
+        f"문서 목록:\n{json.dumps(documents, ensure_ascii=False)}"
+    )
+    topic_summaries = await run_microsoft_agent(topic_prompt, settings)
+    if settings.draft_provider != "github-copilot":
+        raise IntegrationError("최종 주제 그룹화에는 GitHub Copilot SDK가 필요합니다.")
+    prompt += f"\nMicrosoft Agent Framework의 주제 분석 결과:\n{topic_summaries}"
+    results = _parse_response(await run_copilot_draft(prompt, settings))
     by_id = {str(item.get("id")): item for item in results}
     changed = 0
     for record in records:

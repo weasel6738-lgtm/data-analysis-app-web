@@ -5,11 +5,21 @@ param location string = resourceGroup().location
 param acrName string
 
 @description('Image and tag inside ACR')
-param imageName string = 'fabriq:1.0.0'
+param imageName string = 'document-topic-app:1.0.0'
 
 @secure()
 @description('GitHub token used by Copilot SDK. Store it as a deployment secret.')
 param githubToken string
+
+@secure()
+@description('Azure OpenAI API key used by Microsoft Agent Framework.')
+param azureOpenAiApiKey string
+
+@description('Azure OpenAI endpoint used by Microsoft Agent Framework.')
+param azureOpenAiEndpoint string
+
+@description('Azure OpenAI chat model deployment name.')
+param azureOpenAiDeployment string
 
 @description('Copilot model deployment name')
 param copilotModel string = 'gpt-5'
@@ -77,6 +87,16 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
     managedEnvironmentId: environment.id
     configuration: {
       activeRevisionsMode: 'Single'
+      secrets: [
+        {
+          name: 'github-token'
+          value: githubToken
+        }
+        {
+          name: 'azure-openai-api-key'
+          value: azureOpenAiApiKey
+        }
+      ]
       ingress: {
         external: true
         targetPort: 8000
@@ -110,11 +130,23 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'GITHUB_TOKEN'
-              value: githubToken
+              secretRef: 'github-token'
             }
             {
               name: 'COPILOT_MODEL'
               value: copilotModel
+            }
+            {
+              name: 'AZURE_OPENAI_ENDPOINT'
+              value: azureOpenAiEndpoint
+            }
+            {
+              name: 'AZURE_OPENAI_DEPLOYMENT'
+              value: azureOpenAiDeployment
+            }
+            {
+              name: 'AZURE_OPENAI_API_KEY'
+              secretRef: 'azure-openai-api-key'
             }
           ]
           resources: {
