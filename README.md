@@ -1,31 +1,30 @@
-# FabriQ — 양산기술 AI 워크벤치
+# AI 문서 주제 분류 웹 앱
 
-양산기술 엔지니어가 수율 변동을 읽고, 공정 이슈를 분류하고, 원인 후보와
-검증 순서를 정리하는 웹 MVP입니다. **내장 데이터는 전부 제품 시연용 합성
-데이터이며 SK hynix의 실제 또는 기밀 데이터를 포함하지 않습니다.**
+논문과 문서를 업로드하면 본문 내용을 AI가 분석해 연구 주제를 파악하고,
+주제가 유사한 문서끼리 자동으로 그룹화하는 Streamlit 웹 앱입니다.
+문서 형식이나 파일명보다 본문의 의미와 연구 내용을 우선합니다.
 
 ## 제공 기능
 
-- 수율/추세 분석과 3σ SPC 관리선, 이탈 및 연속 추세 탐지
-- 공정 이슈 트리아지, SPC/FDC 스타일 신호 해석
-- 수율과 공정 인자 간 상관 기반 원인 후보 순위(인과로 표현하지 않음)
-- 관찰·가설·검증계획을 구분한 불량 원인 조사
-- 대책 및 보고서 초안 워크플로
-- Microsoft Agent Framework 오케스트레이션과 GitHub Copilot SDK 보고서 작성
-- 외부 SDK/자격 증명이 없을 때 동작하는 결정론적 로컬 모드
-- 파일 내용 기반의 오프라인 문서 자동 분류 및 안전한 ZIP 내보내기
+- 논문·문서 여러 개 업로드
+- 본문 내용 기반의 연구 주제 분석
+- 의미가 유사한 문서끼리 자동 그룹화
+- AI가 그룹명과 분류 근거 생성
+- 파일별 신뢰도와 처리 상태 표시
+- 분류 결과 검토 및 수정
+- 분류별 폴더 복사 또는 ZIP 다운로드
+- GitHub Copilot SDK 또는 Microsoft Agent Framework 연결
 
 ## 구조
 
 ```text
 backend/app/
-  analysis.py       CSV, SPC, 상관 및 신호 분석
-  document_organizer.py  문서 추출, 규칙 분류, 안전한 ZIP 생성
-  orchestration.py  5개 양산기술 워크플로 서비스
-  integrations.py   Agent Framework / Copilot SDK 지연 로딩 어댑터
+  document_ai.py    AI 주제 분석 및 유사 문서 그룹화
+  document_organizer.py  문서 추출과 안전한 결과 생성
+  integrations.py   Agent Framework / Copilot SDK 어댑터
   config.py         환경 변수 설정
   main.py           FastAPI 라우트와 정적 프론트엔드 제공
-backend/streamlit_app.py  독립 실행형 문서 자동 분류 화면
+backend/streamlit_app.py  문서 업로드 및 주제 그룹화 화면
 frontend/           React + TypeScript + Vite 운영 화면
 infra/main.bicep    Azure Container Apps 인프라
 sample-data/        SYNTHETIC_DEMO로 표시된 공개 합성 CSV
@@ -36,57 +35,26 @@ sample-data/        SYNTHETIC_DEMO로 표시된 공개 합성 CSV
 
 ## 로컬 실행
 
-Python 3.12 및 Node.js 20+가 필요합니다.
-
-```powershell
-cd backend
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
-
-다른 터미널:
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-<http://localhost:5173>을 엽니다. API 없이도 UI는 축약된 합성 데모로
-전환됩니다. 또는 단일 컨테이너를 실행합니다.
-
-```powershell
-docker compose up --build
-```
-
-이 경우 <http://localhost:8000>에서 UI와 API를 함께 제공합니다.
-
-## 문서 자동 분류 도우미 실행
-
-문서 도우미는 기존 FastAPI/React 앱과 분리된 Streamlit 화면입니다. Python
-3.12 환경에서 프로젝트 루트 기준으로 다음 명령을 실행합니다.
+Python 3.12 환경에서 프로젝트 루트 기준으로 실행합니다.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r backend\requirements-documents.txt
-streamlit run backend\streamlit_app.py
+streamlit run backend/streamlit_app.py --server.address 127.0.0.1 --server.port 8501
 ```
 
-브라우저에서 <http://localhost:8501>을 열고 폴더를 선택합니다. Streamlit
-1.40 이상에서는 폴더 업로드를 사용하고, 지원하지 않는 환경에서는 여러 파일
-선택으로 자동 전환됩니다. 브라우저가 전달한 상대 경로는 가능한 경우
-보존됩니다.
+브라우저에서 <http://127.0.0.1:8501>을 열고 논문 또는 문서 폴더를
+업로드합니다. 파일을 올리면 AI 주제 분석이 자동으로 시작됩니다.
 
-1. `분류안 만들기`를 눌러 파일명과 문서 내용을 분석합니다.
-2. 표의 `최종 분류` 열에서 필요한 항목을 직접 수정합니다.
-3. 확인 체크박스를 선택하고 `분류별 폴더로 복사` 또는 `정리 ZIP 생성`을 누릅니다.
-4. 로컬 실행에서는 `organized-output` 폴더를 확인하거나 ZIP을 내려받아 결과와 `manifest.csv`를 확인합니다.
+1. 파일을 업로드합니다.
+2. AI가 본문을 분석해 주제를 파악하고 유사한 문서끼리 그룹화합니다.
+3. 표의 `최종 분류` 열에서 필요한 항목을 직접 수정합니다.
+4. 확인 체크박스를 선택하고 `분류별 폴더로 복사` 또는 `정리 ZIP 생성`을 누릅니다.
+5. 로컬 실행에서는 `organized-output` 폴더를 확인하거나 ZIP을 내려받아 결과와 `manifest.csv`를 확인합니다.
 
 지원 형식은 TXT, MD, CSV, XLSX, DOCX, PDF 및 일반 이미지입니다. 문서의
-본문을 Microsoft Agent Framework를 통해 분석하면 미리 정한 문서 유형이
+본문을 AI로 분석하면 미리 정한 문서 유형이
 아니라 연구 주제·핵심 문제·방법론이 비슷한 파일끼리 AI가 새 그룹명을
 만들어 묶습니다. 예를 들어 논문은 자연어 처리, 의료 영상 분석, 강화학습
 등의 주제로 자동 그룹화할 수 있습니다. AI 설정이 없으면 주제 그룹을
@@ -124,7 +92,7 @@ pip install -r backend/requirements.txt -r backend/requirements-ai.txt
 `agent-framework`의 `AzureOpenAIChatClient`가 분석 단계를 오케스트레이션하고,
 `github-copilot-sdk`의 `CopilotClient`가 보고서 워크플로 문안을 작성합니다.
 패키지 또는 설정 오류는 명시적인 `fallback` 상태로 반환되며 기본 분석은
-계속됩니다. 운영 데이터 외부 전송은 조직의 보안·데이터 정책 승인 후
+계속됩니다. 외부 AI를 사용할 때는 조직의 보안·데이터 정책 승인 후
 명시적으로 provider를 바꾼 경우에만 허용해야 합니다.
 
 ## API
