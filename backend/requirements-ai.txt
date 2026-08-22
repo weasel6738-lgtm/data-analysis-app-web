@@ -1,0 +1,5 @@
+# Optional production AI adapters. Install after requirements.txt only when used.
+# Official package names; imports remain lazy so demo mode needs neither package.
+agent-framework>=1.0.0b1,<2
+github-copilot-sdk>=0.1.0,<1
+azure-identity>=1.19,<2

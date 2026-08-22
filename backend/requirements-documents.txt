@@ -1,0 +1,7 @@
+-r requirements.txt
+
+# Streamlit document organizer only; not required by the FastAPI application.
+streamlit>=1.40,<2
+openpyxl>=3.1,<4
+python-docx>=1.1,<2
+pypdf>=5,<7
