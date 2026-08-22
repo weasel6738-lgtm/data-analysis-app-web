@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import streamlit as st
 from streamlit.errors import StreamlitAPIException
+
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 try:
     from app.document_organizer import (
