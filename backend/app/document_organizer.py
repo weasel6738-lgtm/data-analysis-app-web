@@ -5,11 +5,12 @@ from __future__ import annotations
 import csv
 import io
 import re
+from pathlib import Path
 import zipfile
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 from docx import Document
 from openpyxl import load_workbook
@@ -111,6 +112,7 @@ class ProcessedDocument:
     processing_status: str
     error: str = ""
     note: str = ""
+    classification_source: str = "local-rule"
 
 
 def _extension(filename: str) -> str:
@@ -231,10 +233,9 @@ def extract_text(filename: str, content: bytes) -> ExtractionResult:
 def _normalized_keywords(
     keywords: Mapping[str, Sequence[str]] | None,
 ) -> dict[str, tuple[str, ...]]:
-    source = keywords or CATEGORY_KEYWORDS
+    source = CATEGORY_KEYWORDS if keywords is None else keywords
     result: dict[str, tuple[str, ...]] = {}
-    for category in CATEGORIES:
-        values = source.get(category, CATEGORY_KEYWORDS[category])
+    for category, values in source.items():
         result[category] = tuple(
             dict.fromkeys(value.strip().lower() for value in values if value.strip())
         )
@@ -249,7 +250,7 @@ def classify_document(
     """Classify deterministically from filename, extension, and extracted text."""
 
     extension = _extension(filename)
-    if extension in IMAGE_EXTENSIONS:
+    if keywords is None and extension in IMAGE_EXTENSIONS:
         return ClassificationResult("이미지", 0.99, f"이미지 확장자({extension})")
 
     lowered_name = filename.lower()
@@ -263,26 +264,38 @@ def classify_document(
             in_name = keyword in lowered_name
             in_text = keyword in lowered_text
             if in_name:
-                scores[category] += 3
+                scores[category] += 1
                 evidence[category].append(f"파일명:{keyword}")
             if in_text:
-                scores[category] += 1
+                scores[category] += 4
                 evidence[category].append(f"내용:{keyword}")
 
-    if extension in {".csv", ".xlsx"}:
+    if keywords is None and extension in {".csv", ".xlsx"}:
         scores["데이터"] += 2
         evidence["데이터"].append(f"형식:{extension}")
 
+    category_order = list(configured) if keywords is not None else list(CATEGORIES)
     ranked = sorted(
-        ((scores[category], -index, category) for index, category in enumerate(CATEGORIES)),
+        (
+            (scores[category], -index, category)
+            for index, category in enumerate(category_order)
+        ),
         reverse=True,
     )
+    if not ranked:
+        return ClassificationResult(
+            "분류되지 않음",
+            0.0,
+            "사용자 분류 기준이 없습니다.",
+        )
     winning_score, _, category = ranked[0]
     if winning_score <= 0 or category in {"이미지", "기타/분류불가"}:
         return ClassificationResult(
-            "기타/분류불가",
+            "기타/분류불가" if keywords is None else "분류되지 않음",
             0.0,
-            "일치하는 분류 키워드가 없습니다.",
+            "사용자 기준과 일치하는 본문 키워드가 없습니다."
+            if keywords is not None
+            else "일치하는 분류 키워드가 없습니다.",
         )
 
     runner_up = ranked[1][0]
@@ -295,12 +308,15 @@ def classify_document(
 def process_documents(
     documents: Iterable[InputDocument],
     keywords: Mapping[str, Sequence[str]] | None = None,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> list[ProcessedDocument]:
     """Process every document independently and retain explicit failure states."""
 
     processed: list[ProcessedDocument] = []
     names: defaultdict[str, list[ProcessedDocument]] = defaultdict(list)
-    for index, document in enumerate(documents):
+    document_list = list(documents)
+    total = len(document_list)
+    for index, document in enumerate(document_list):
         raw_name = document.path.replace("\\", "/").rsplit("/", 1)[-1]
         safe_name = sanitize_filename(raw_name)
         try:
@@ -325,9 +341,12 @@ def process_documents(
             matched_keywords=classification.matched_keywords,
             processing_status=extraction.status,
             error=extraction.error,
+            classification_source="local-rule",
         )
         processed.append(item)
         names[safe_name.casefold()].append(item)
+        if progress_callback:
+            progress_callback(index + 1, total, safe_name)
 
     for duplicates in names.values():
         if len(duplicates) > 1:
@@ -358,6 +377,17 @@ def _deduplicate_name(category: str, filename: str, used: set[str]) -> str:
 
 def _category_directory(category: str) -> str:
     return category.replace("/", "_").replace("\\", "_")
+
+
+def _validate_category(category: str) -> str:
+    """Accept built-in or AI-generated labels without allowing path traversal."""
+
+    value = str(category).strip()
+    if value in CATEGORIES:
+        return value
+    if not value or len(value) > 80 or any(char in value for char in "/\\\x00"):
+        raise ValueError(f"허용되지 않은 분류입니다: {category}")
+    return value
 
 
 def _csv_safe(value: object) -> object:
@@ -399,8 +429,7 @@ def create_organized_zip(
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for document in documents:
             category = final_categories.get(document.document_id, document.suggested_category)
-            if category not in CATEGORIES:
-                raise ValueError(f"허용되지 않은 분류입니다: {category}")
+            category = _validate_category(category)
             category_directory = _category_directory(category)
             filename = _deduplicate_name(
                 category_directory, sanitize_filename(document.original_name), used
@@ -425,3 +454,27 @@ def create_organized_zip(
             )
         archive.writestr("manifest.csv", "\ufeff" + manifest.getvalue())
     return output.getvalue()
+
+
+def create_organized_folder(
+    documents: Sequence[ProcessedDocument],
+    output_dir: str | Path,
+    overrides: Mapping[str, str] | None = None,
+) -> Path:
+    """Copy classified originals into a local category folder."""
+
+    archive_bytes = create_organized_zip(documents, overrides)
+    root = Path(output_dir).resolve()
+    root.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        for member in archive.infolist():
+            target = (root / member.filename).resolve()
+            if target != root and root not in target.parents:
+                raise ValueError(f"안전하지 않은 출력 경로입니다: {member.filename}")
+            if member.is_dir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(archive.read(member))
+    return root
