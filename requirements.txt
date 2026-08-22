@@ -1,0 +1,8 @@
+streamlit>=1.40,<2
+openpyxl>=3.1,<4
+python-docx>=1.1,<2
+pypdf>=5,<7
+python-dotenv>=1.0,<2
+agent-framework>=1.0.0b1,<2
+github-copilot-sdk>=0.1.0,<1
+azure-identity>=1.19,<2
