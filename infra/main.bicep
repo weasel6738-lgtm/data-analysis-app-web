@@ -7,6 +7,13 @@ param acrName string
 @description('Image and tag inside ACR')
 param imageName string = 'fabriq:1.0.0'
 
+@secure()
+@description('GitHub token used by Copilot SDK. Store it as a deployment secret.')
+param githubToken string
+
+@description('Copilot model deployment name')
+param copilotModel string = 'gpt-5'
+
 @description('Container App name')
 param appName string = 'fabriq-${uniqueString(resourceGroup().id)}'
 
@@ -95,11 +102,19 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
             }
             {
               name: 'ORCHESTRATOR_PROVIDER'
-              value: 'local'
+              value: 'microsoft-agent'
             }
             {
               name: 'DRAFT_PROVIDER'
-              value: 'local'
+              value: 'github-copilot'
+            }
+            {
+              name: 'GITHUB_TOKEN'
+              value: githubToken
+            }
+            {
+              name: 'COPILOT_MODEL'
+              value: copilotModel
             }
           ]
           resources: {
